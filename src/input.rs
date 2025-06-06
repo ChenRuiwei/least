@@ -1,7 +1,10 @@
-use std::fmt::{self};
-use std::io::BufRead;
-use std::str;
-use std::{cmp, io};
+use std::{
+    cmp,
+    fmt::{self},
+    io,
+    io::BufRead,
+    str,
+};
 
 use color_eyre::Result;
 
