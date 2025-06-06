@@ -1,4 +1,8 @@
-use std::{cmp::min, fs::File, io::Read};
+use std::{
+    cmp::min,
+    fs::File,
+    io::{BufReader, Read},
+};
 
 use color_eyre::{Result, eyre::Ok};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
@@ -12,13 +16,17 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
-use crate::keys;
+use crate::{
+    input::{InputBuffer, InputReader},
+    keys,
+    utils::count_lines,
+};
 
 /// The main application which holds the state and logic of the application.
 #[derive(Debug, Default)]
 pub struct App {
     mode: AppMode,
-    buf_string: String,
+    buffer: InputBuffer,
     current_line: usize,
     total_lines: usize,
     key_state: KeyState,
@@ -37,7 +45,7 @@ impl App {
         self.term_size = terminal.size()?;
 
         while self.mode != AppMode::Terminated {
-            terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
+            terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
             self.handle_crossterm_events()?;
         }
         Ok(())
@@ -143,27 +151,23 @@ impl App {
 
     fn read_file(&mut self) -> Result<()> {
         let mut f = File::open("./sample-files/pacman.conf")?;
-        let mut v = Vec::new();
-        f.read_to_end(&mut v)?;
-        let s = String::from_utf8(v)?;
-        self.buf_string = s;
-        self.total_lines = self.buf_string.split("\n").collect::<Vec<_>>().len();
+        self.total_lines = count_lines(&mut f)?;
+        let f = File::open("./sample-files/pacman.conf")?;
+        self.buffer.reader = Some(InputReader::new(BufReader::new(f)));
         Ok(())
     }
 
     /// Create some lines to display in the paragraph.
-    fn create_lines(&self) -> Result<Vec<Line<'_>>> {
-        let lines = self.buf_string.split("\n").collect::<Vec<_>>();
-        let mut ret = Vec::new();
-        for l in lines.into_iter().skip(self.current_line) {
-            ret.push(Line::from(l));
-        }
-        ret.push(Line::from("(END)").bold());
-        Ok(ret)
+    fn create_lines(&mut self) -> Result<Vec<Line<'_>>> {
+        let lines = self
+            .buffer
+            .lines(self.current_line, self.term_height())
+            .unwrap();
+        Ok(lines)
     }
 }
 
-impl Widget for &App {
+impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Paragraph::new(self.create_lines().unwrap())
             .gray()

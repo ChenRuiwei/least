@@ -1,5 +1,7 @@
-pub mod app;
-pub mod keys;
+mod app;
+mod input;
+mod keys;
+mod utils;
 
 use app::App;
 
