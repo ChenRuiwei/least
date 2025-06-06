@@ -60,7 +60,7 @@ impl App {
             // it's important to check KeyEventKind::Press to avoid handling key release events
             Event::Key(key) if key.kind == KeyEventKind::Press => self.on_key_event(key),
             Event::Mouse(_) => {}
-            Event::Resize(_, _) => {}
+            Event::Resize(colomns, rows) => self.term_size = Size::new(colomns, rows),
             _ => {}
         }
         Ok(())
