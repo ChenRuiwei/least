@@ -13,3 +13,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 directories = "6.0"
 lazy_static = "1.5"
 log = "0.4"
+clap = { version = "4.5", features = ["derive"] }

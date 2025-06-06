@@ -1,9 +1,6 @@
-use std::{
-    cmp::min,
-    fs::File,
-    io::{BufReader, Read},
-};
+use std::{cmp::min, fs::File, io::BufReader};
 
+use clap::Parser;
 use color_eyre::{Result, eyre::Ok};
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use keys::{Action, KeyState};
@@ -22,9 +19,23 @@ use crate::{
     utils::count_lines,
 };
 
+/// least: a minimal pager to replace `less`
+#[derive(Default, Parser, Debug)]
+#[clap(
+    name = "least",
+    version = "0.1.0",
+    author = "ChenRuiwei",
+    about = "A lightweight pager as a simpler alternative to `less`"
+)]
+pub struct Cli {
+    #[clap(value_name = "FILE")]
+    pub file: String,
+}
+
 /// The main application which holds the state and logic of the application.
 #[derive(Debug, Default)]
 pub struct App {
+    cli: Cli,
     mode: AppMode,
     buffer: InputBuffer,
     current_line: usize,
@@ -35,8 +46,11 @@ pub struct App {
 
 impl App {
     /// Construct a new instance of [`App`].
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(cli: Cli) -> Self {
+        Self {
+            cli,
+            ..Default::default()
+        }
     }
 
     /// Run the application's main loop.
@@ -155,9 +169,10 @@ impl App {
     }
 
     fn read_file(&mut self) -> Result<()> {
-        let mut f = File::open("./sample-files/pacman.conf")?;
+        log::info!("read file {}", self.cli.file);
+        let mut f = File::open(&self.cli.file)?;
         self.total_lines = count_lines(&mut f)?;
-        let f = File::open("./sample-files/pacman.conf")?;
+        let f = File::open(&self.cli.file)?;
         self.buffer.reader = Some(InputReader::new(BufReader::new(f)));
         Ok(())
     }
