@@ -60,7 +60,7 @@ impl App {
             // it's important to check KeyEventKind::Press to avoid handling key release events
             Event::Key(key) if key.kind == KeyEventKind::Press => self.on_key_event(key),
             Event::Mouse(_) => {}
-            Event::Resize(colomns, rows) => self.term_size = Size::new(colomns, rows),
+            Event::Resize(colomns, rows) => self.on_term_resize(Size::new(colomns, rows)),
             _ => {}
         }
         Ok(())
@@ -88,6 +88,11 @@ impl App {
             Action::None => {}
             Action::Quit => self.quit(),
         }
+    }
+
+    fn on_term_resize(&mut self, new_size: Size) {
+        self.term_size = new_size;
+        self.current_line = min(self.current_line, self.current_max_line());
     }
 
     fn term_half_height(&self) -> usize {
