@@ -28,7 +28,6 @@ use crate::{
     about = "A lightweight pager as a simpler alternative to `less`"
 )]
 pub struct Cli {
-    #[clap(value_name = "FILE")]
     pub file: String,
 }
 
@@ -153,7 +152,7 @@ impl App {
     }
 
     fn current_max_line(&self) -> usize {
-        self.total_lines - self.term_height()
+        self.total_lines.saturating_sub(self.term_height())
     }
 
     fn go_to_top(&mut self) {
@@ -179,10 +178,7 @@ impl App {
 
     /// Create some lines to display in the paragraph.
     fn create_lines(&mut self) -> Result<Vec<Line<'_>>> {
-        let lines = self
-            .buffer
-            .lines(self.current_line, self.term_height())
-            .unwrap();
+        let lines = self.buffer.lines(self.current_line, self.term_height())?;
         Ok(lines)
     }
 }

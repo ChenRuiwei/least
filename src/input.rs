@@ -7,7 +7,6 @@ use std::{
 };
 
 use color_eyre::Result;
-
 use ratatui::text::Line;
 
 pub struct InputReader {
@@ -49,13 +48,8 @@ impl InputBuffer {
     }
 
     pub fn lines(&mut self, line_number_start: usize, line_size: usize) -> Result<Vec<Line<'_>>> {
-        let line_number_end = if self.reached_eof {
-            cmp::min(line_number_start + line_size, self.lines.len())
-        } else {
-            line_number_start + line_size
-        };
-
-        while !self.reached_eof && self.lines.len() < line_number_end {
+        log::trace!("create lines {line_number_start} {line_size}");
+        while !self.reached_eof && self.lines.len() < line_number_start + line_size {
             let mut current_line_buffer: Vec<u8> = Vec::new();
             if self.reader_mut().read_line(&mut current_line_buffer)? {
                 self.lines.push(current_line_buffer);
@@ -63,6 +57,9 @@ impl InputBuffer {
                 self.reached_eof = true;
             }
         }
+
+        let line_number_end = cmp::min(line_number_start + line_size, self.lines.len());
+        log::trace!("line number end {line_number_end}");
 
         Ok(self.lines[line_number_start..line_number_end]
             .iter()
