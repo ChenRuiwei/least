@@ -1,1 +1,4 @@
 /target
+
+.gdbinit
+.gdb_history
