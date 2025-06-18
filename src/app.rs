@@ -172,22 +172,24 @@ impl App {
         let mut f = File::open(&self.cli.file)?;
         self.total_lines = count_lines(&mut f)?;
         let f = File::open(&self.cli.file)?;
-        self.buffer.reader = Some(InputReader::new(BufReader::new(f)));
+        self.buffer.set_reader(InputReader::new(BufReader::new(f)));
         Ok(())
     }
 
     /// Create some lines to display in the paragraph.
     fn create_lines(&mut self) -> Result<Vec<Line<'_>>> {
         let lines = self.buffer.lines(self.current_line, self.term_height())?;
+        log::info!("lines {lines:?}");
         Ok(lines)
     }
 }
 
 impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        Paragraph::new(self.create_lines().unwrap())
-            .gray()
-            .render(area, buf);
+        let lines = self.create_lines().unwrap();
+        log::info!("first line is {:?}", lines[0]);
+        Paragraph::new(lines).gray().render(area, buf);
+        log::info!("buffer {:?}", buf);
     }
 }
 

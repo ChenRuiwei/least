@@ -22,6 +22,10 @@ impl InputReader {
 
     pub fn read_line(&mut self, buf: &mut Vec<u8>) -> io::Result<bool> {
         let res = self.inner.read_until(b'\n', buf).map(|size| size > 0)?;
+        let line = String::from_utf8_lossy(buf);
+        let replaced = line.replace('\t', "  ");
+        buf.clear();
+        buf.extend_from_slice(replaced.as_bytes());
         Ok(res)
     }
 }
@@ -29,7 +33,7 @@ impl InputReader {
 #[derive(Default)]
 pub struct InputBuffer {
     lines: Vec<Vec<u8>>,
-    pub reader: Option<InputReader>,
+    reader: Option<InputReader>,
     reached_eof: bool,
 }
 
@@ -43,6 +47,10 @@ impl fmt::Debug for InputBuffer {
 }
 
 impl InputBuffer {
+    pub fn set_reader(&mut self, reader: InputReader) {
+        self.reader = Some(reader)
+    }
+
     fn reader_mut(&mut self) -> &mut InputReader {
         self.reader.as_mut().unwrap()
     }
