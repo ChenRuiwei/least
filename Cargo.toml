@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-crossterm = "0.29"
 ratatui = "0.29"
+crossterm = "0.29"
 color-eyre = "0.6"
 tracing-error = "0.2"
 tracing = "0.1"
@@ -14,3 +14,6 @@ directories = "6.0"
 lazy_static = "1.5"
 log = "0.4"
 clap = { version = "4.5", features = ["derive"] }
+clircle = "0.6.1"
+content_inspector = "0.2.4"
+thiserror = "2.0.12"

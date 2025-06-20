@@ -1,4 +1,11 @@
-use std::{cmp::min, fs::File, io::BufReader};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    cmp::min,
+    io,
+    path::PathBuf,
+    thread,
+    time::Duration,
+};
 
 use clap::Parser;
 use color_eyre::{Result, eyre::Ok};
@@ -9,14 +16,12 @@ use ratatui::{
     buffer::Buffer,
     layout::{Rect, Size},
     style::Stylize,
-    text::Line,
     widgets::{Paragraph, Widget},
 };
 
 use crate::{
-    input::{InputBuffer, InputReader},
+    input::{Input, OpenedInput},
     keys,
-    utils::count_lines,
 };
 
 /// least: a minimal pager to replace `less`
@@ -28,7 +33,8 @@ use crate::{
     about = "A lightweight pager as a simpler alternative to `less`"
 )]
 pub struct Cli {
-    pub file: String,
+    #[arg(value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
+    pub files: Vec<PathBuf>,
 }
 
 /// The main application which holds the state and logic of the application.
@@ -36,15 +42,13 @@ pub struct Cli {
 pub struct App {
     cli: Cli,
     mode: AppMode,
-    buffer: InputBuffer,
+    opened_input: Option<RefCell<OpenedInput>>,
     current_line: usize,
-    total_lines: usize,
     key_state: KeyState,
     term_size: Size,
 }
 
 impl App {
-    /// Construct a new instance of [`App`].
     pub fn new(cli: Cli) -> Self {
         Self {
             cli,
@@ -52,22 +56,37 @@ impl App {
         }
     }
 
-    /// Run the application's main loop.
+    fn inputs(&self) -> Result<Vec<Input>> {
+        if self.cli.files.is_empty() {
+            return Ok(vec![Input::stdin()]);
+        }
+        let mut file_input = Vec::new();
+        for file in &self.cli.files {
+            file_input.push(Input::ordinary_file(file));
+        }
+        Ok(file_input)
+    }
+
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
-        self.read_file()?;
+        let mut inputs = self.inputs()?;
+        let input = inputs.pop().unwrap();
+
+        self.opened_input = if input.is_stdin() {
+            Some(RefCell::new(input.open(io::stdin().lock())?))
+        } else {
+            Some(RefCell::new(input.open(io::empty())?))
+        };
+
         self.term_size = terminal.size()?;
 
         while self.mode != AppMode::Terminated {
             terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
             self.handle_crossterm_events()?;
         }
+
         Ok(())
     }
 
-    /// Reads the crossterm events and updates the state of [`App`].
-    ///
-    /// If your application needs to perform work in between handling events, you can use the
-    /// [`event::poll`] function to check if there are any events available with a timeout.
     fn handle_crossterm_events(&mut self) -> Result<()> {
         match event::read()? {
             // it's important to check KeyEventKind::Press to avoid handling key release events
@@ -79,7 +98,6 @@ impl App {
         Ok(())
     }
 
-    /// Handles the key events and updates the state of [`App`].
     fn on_key_event(&mut self, key: KeyEvent) {
         let (key_state, action) = self.key_state.next(key);
         self.key_state = key_state;
@@ -116,7 +134,6 @@ impl App {
         self.term_size.height as _
     }
 
-    /// Set running to false to quit the application.
     fn quit(&mut self) {
         self.mode = AppMode::Terminated
     }
@@ -151,8 +168,19 @@ impl App {
         )
     }
 
+    fn opened_input(&self) -> Ref<OpenedInput> {
+        self.opened_input.as_ref().unwrap().borrow()
+    }
+
+    fn opened_input_mut(&self) -> RefMut<OpenedInput> {
+        self.opened_input.as_ref().unwrap().borrow_mut()
+    }
+
     fn current_max_line(&self) -> usize {
-        self.total_lines.saturating_sub(self.term_height())
+        let mut opened_input = self.opened_input_mut();
+        opened_input
+            .current_total_lines()
+            .saturating_sub(self.term_height())
     }
 
     fn go_to_top(&mut self) {
@@ -166,27 +194,14 @@ impl App {
     fn go_to_line(&mut self, line: usize) {
         self.current_line = min(line, self.current_max_line())
     }
-
-    fn read_file(&mut self) -> Result<()> {
-        log::info!("read file {}", self.cli.file);
-        let mut f = File::open(&self.cli.file)?;
-        self.total_lines = count_lines(&mut f)?;
-        let f = File::open(&self.cli.file)?;
-        self.buffer.set_reader(InputReader::new(BufReader::new(f)));
-        Ok(())
-    }
-
-    /// Create some lines to display in the paragraph.
-    fn create_lines(&mut self) -> Result<Vec<Line<'_>>> {
-        let lines = self.buffer.lines(self.current_line, self.term_height())?;
-        log::info!("lines {lines:?}");
-        Ok(lines)
-    }
 }
 
 impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let lines = self.create_lines().unwrap();
+        let current_line = self.current_line;
+        let term_hight = self.term_height();
+        let mut opened_input = self.opened_input_mut();
+        let lines = opened_input.lines(current_line, term_hight).unwrap();
         log::info!("first line is {:?}", lines[0]);
         Paragraph::new(lines).gray().render(area, buf);
         log::info!("buffer {:?}", buf);
