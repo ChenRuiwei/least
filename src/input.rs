@@ -7,9 +7,9 @@ use std::{
     str,
 };
 
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 
-use crate::error::*;
+use crate::{error::*, utils::parse_styled_spans};
 
 #[derive(Debug)]
 pub enum InputKind {
@@ -73,7 +73,7 @@ pub enum OpenedInputKind {
 pub struct OpenedInput {
     pub kind: OpenedInputKind,
     pub reader: InputReader,
-    lines: Vec<Vec<u8>>,
+    lines: Vec<Vec<Span<'static>>>,
     reached_eof: bool,
     current_total_lines: usize,
 }
@@ -100,7 +100,8 @@ impl OpenedInput {
         while !self.reached_eof() {
             let mut current_line_buffer: Vec<u8> = Vec::new();
             if self.reader.try_read_line(&mut current_line_buffer)? {
-                self.lines.push(current_line_buffer);
+                let spans = parse_styled_spans(current_line_buffer);
+                self.lines.push(spans);
             } else {
                 self.reached_eof = true
             }
@@ -119,7 +120,8 @@ impl OpenedInput {
         while !self.reached_eof() && self.lines.len() < line_number_start + line_size {
             let mut current_line_buffer: Vec<u8> = Vec::new();
             if self.reader.read_line(&mut current_line_buffer)? {
-                self.lines.push(current_line_buffer);
+                let spans = parse_styled_spans(current_line_buffer);
+                self.lines.push(spans);
             } else {
                 self.reached_eof = true
             }
@@ -131,7 +133,7 @@ impl OpenedInput {
 
         Ok(self.lines[line_number_start..line_number_end]
             .iter()
-            .map(|line| Line::from(str::from_utf8(line).expect("checked to be utf8")))
+            .map(|line| Line::from(line.clone()))
             .collect())
     }
 }
