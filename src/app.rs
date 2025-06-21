@@ -1,15 +1,13 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
     cmp::min,
-    io,
     path::PathBuf,
-    thread,
-    time::Duration,
+    sync::mpsc::{self, Receiver, Sender},
+    thread::{self},
 };
 
 use clap::Parser;
-use color_eyre::{Result, eyre::Ok};
-use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
+use crossterm::event::{KeyEvent, KeyEventKind};
 use keys::{Action, KeyState};
 use ratatui::{
     DefaultTerminal,
@@ -20,6 +18,8 @@ use ratatui::{
 };
 
 use crate::{
+    error::*,
+    event::Event,
     input::{Input, OpenedInput},
     keys,
 };
@@ -46,6 +46,7 @@ pub struct App {
     current_line: usize,
     key_state: KeyState,
     term_size: Size,
+    rx: Option<Receiver<Event>>,
 }
 
 impl App {
@@ -71,28 +72,51 @@ impl App {
         let mut inputs = self.inputs()?;
         let input = inputs.pop().unwrap();
 
-        self.opened_input = if input.is_stdin() {
-            Some(RefCell::new(input.open(io::stdin().lock())?))
-        } else {
-            Some(RefCell::new(input.open(io::empty())?))
-        };
+        let (tx, rx) = mpsc::channel::<Event>();
+        self.rx = Some(rx);
 
+        self.opened_input = Some(RefCell::new(input.open(tx.clone())?));
+
+        Self::spawn_term_thread(tx.clone());
         self.term_size = terminal.size()?;
 
         while self.mode != AppMode::Terminated {
             terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
-            self.handle_crossterm_events()?;
+            self.handle_events()?;
         }
 
         Ok(())
     }
 
-    fn handle_crossterm_events(&mut self) -> Result<()> {
-        match event::read()? {
+    fn spawn_term_thread(tx: Sender<Event>) {
+        thread::spawn(move || {
+            loop {
+                match crossterm::event::read() {
+                    Ok(event) => tx.send(Event::Term(event)).unwrap(),
+                    Err(err) => tx.send(Event::Err(err.into())).unwrap(),
+                };
+            }
+        });
+    }
+
+    fn handle_events(&mut self) -> Result<()> {
+        match self.rx.as_ref().unwrap().recv().unwrap() {
+            Event::Term(event) => self.handle_crossterm_events(event),
+            e @ (Event::NewLine(_) | Event::EOF) => self.opened_input_mut().recv_event(e),
+            Event::Err(error) => Err(error),
+        }
+    }
+
+    fn handle_crossterm_events(&mut self, event: crossterm::event::Event) -> Result<()> {
+        match event {
             // it's important to check KeyEventKind::Press to avoid handling key release events
-            Event::Key(key) if key.kind == KeyEventKind::Press => self.on_key_event(key),
-            Event::Mouse(_) => {}
-            Event::Resize(colomns, rows) => self.on_term_resize(Size::new(colomns, rows)),
+            crossterm::event::Event::Key(key) if key.kind == KeyEventKind::Press => {
+                self.on_key_event(key)
+            }
+            crossterm::event::Event::Mouse(_) => {}
+            crossterm::event::Event::Resize(colomns, rows) => {
+                self.on_term_resize(Size::new(colomns, rows))
+            }
             _ => {}
         }
         Ok(())
@@ -201,8 +225,8 @@ impl Widget for &mut App {
         let current_line = self.current_line;
         let term_hight = self.term_height();
         let mut opened_input = self.opened_input_mut();
+
         let lines = opened_input.lines(current_line, term_hight).unwrap();
-        log::info!("first line is {:?}", lines[0]);
         Paragraph::new(lines).gray().render(area, buf);
         log::info!("buffer {:?}", buf);
     }

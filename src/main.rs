@@ -2,6 +2,7 @@
 
 mod app;
 mod error;
+mod event;
 mod input;
 mod keys;
 mod tracing;
@@ -9,7 +10,8 @@ mod utils;
 
 use app::{App, Cli};
 use clap::Parser;
-use color_eyre::Result;
+
+use crate::error::*;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
