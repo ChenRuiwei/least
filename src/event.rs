@@ -5,4 +5,5 @@ pub enum Event {
     NewLines(Vec<String>),
     EOF,
     Err(Report),
+    ReaderThreadErrReturned,
 }

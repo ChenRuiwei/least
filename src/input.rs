@@ -41,9 +41,17 @@ impl Input {
             let mut reader = match self.kind {
                 InputKind::StdIn => InputReader::new(stdin().lock(), tx),
                 InputKind::OrdinaryFile(path) => {
-                    let file = File::open(&path)
-                        .map_err(|e| eyre!("'{}': {}", path.to_string_lossy(), e))?;
-                    if file.metadata()?.is_dir() {
+                    let file = File::open(&path).map_err(|e| {
+                        let e = eyre!("'{}': {}", path.to_string_lossy(), e);
+                        tx.send(Event::ReaderThreadErrReturned).unwrap();
+                        e
+                    })?;
+                    let metadata = file.metadata().map_err(|e| {
+                        tx.send(Event::ReaderThreadErrReturned).unwrap();
+                        e
+                    })?;
+                    if metadata.is_dir() {
+                        tx.send(Event::ReaderThreadErrReturned).unwrap();
                         return Err(eyre!("'{}' is a directory.", path.to_string_lossy()));
                     }
                     InputReader::new(BufReader::new(file), tx)
@@ -55,7 +63,14 @@ impl Input {
             let flush_interval = Duration::from_millis(16);
             let mut last_flush = Instant::now();
             loop {
-                let reached_eof = reader.read_line(&mut line).map(|size| size == 0)?;
+                let reached_eof =
+                    reader
+                        .read_line(&mut line)
+                        .map(|size| size == 0)
+                        .map_err(|e| {
+                            reader.tx.send(Event::ReaderThreadErrReturned).unwrap();
+                            e
+                        })?;
                 if reached_eof {
                     break;
                 }

@@ -7,6 +7,7 @@ use std::{
 };
 
 use clap::Parser;
+use color_eyre::eyre::eyre;
 use crossterm::event::{KeyEvent, KeyEventKind};
 use keys::{Action, KeyState};
 use ratatui::{
@@ -85,15 +86,6 @@ impl App {
             self.handle_events()?;
         }
 
-        let reader_thread = self.opened_input.take().unwrap().into_inner().reader;
-        if reader_thread.is_finished() {
-            let res = reader_thread.join().unwrap();
-            match res {
-                Ok(_) => log::info!("reader thread finished before main terminated"),
-                Err(err) => log::error!("reader thread failed {}", err),
-            }
-        }
-
         Ok(())
     }
 
@@ -115,6 +107,20 @@ impl App {
             }
             e @ (Event::NewLines(_) | Event::EOF) => self.opened_input_mut().handle_event(e)?,
             Event::Err(error) => return Err(error),
+            Event::NewLines(items) => todo!(),
+            Event::EOF => todo!(),
+            Event::ReaderThreadErrReturned => {
+                let reader_thread = self.opened_input.take().unwrap().into_inner().reader;
+                if reader_thread.is_finished() {
+                    let res = reader_thread.join().unwrap();
+                    match res {
+                        Ok(_) => unreachable!(),
+                        Err(err) => {
+                            return Err(eyre!("reader thread failed {}", err));
+                        }
+                    }
+                }
+            }
         };
         Ok(())
     }
