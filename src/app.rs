@@ -102,7 +102,7 @@ impl App {
     fn handle_events(&mut self) -> Result<()> {
         match self.rx.as_ref().unwrap().recv().unwrap() {
             Event::Term(event) => self.handle_crossterm_events(event),
-            e @ (Event::NewLine(_) | Event::EOF) => self.opened_input_mut().recv_event(e),
+            e @ (Event::NewLines(_) | Event::EOF) => self.opened_input_mut().handle_event(e),
             Event::Err(error) => Err(error),
         }
     }
@@ -227,8 +227,8 @@ impl Widget for &mut App {
         let mut opened_input = self.opened_input_mut();
 
         let lines = opened_input.lines(current_line, term_hight).unwrap();
-        Paragraph::new(lines).gray().render(area, buf);
-        log::info!("buffer {:?}", buf);
+        Paragraph::new(lines).white().render(area, buf);
+        log::debug!("buffer {:?}", buf);
     }
 }
 

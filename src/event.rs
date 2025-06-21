@@ -2,7 +2,7 @@ use color_eyre::eyre::Report;
 
 pub enum Event {
     Term(crossterm::event::Event),
-    NewLine(String),
+    NewLines(Vec<String>),
     EOF,
     Err(Report),
 }

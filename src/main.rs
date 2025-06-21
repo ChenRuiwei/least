@@ -1,4 +1,4 @@
-#![feature(buf_read_has_data_left)]
+#![feature(slice_internals)]
 
 mod app;
 mod error;
