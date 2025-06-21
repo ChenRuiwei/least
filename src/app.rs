@@ -85,6 +85,15 @@ impl App {
             self.handle_events()?;
         }
 
+        let reader_thread = self.opened_input.take().unwrap().into_inner().reader;
+        if reader_thread.is_finished() {
+            let res = reader_thread.join().unwrap();
+            match res {
+                Ok(_) => log::info!("reader thread finished before main terminated"),
+                Err(err) => log::error!("reader thread failed {}", err),
+            }
+        }
+
         Ok(())
     }
 
@@ -101,10 +110,13 @@ impl App {
 
     fn handle_events(&mut self) -> Result<()> {
         match self.rx.as_ref().unwrap().recv().unwrap() {
-            Event::Term(event) => self.handle_crossterm_events(event),
-            e @ (Event::NewLines(_) | Event::EOF) => self.opened_input_mut().handle_event(e),
-            Event::Err(error) => Err(error),
-        }
+            Event::Term(event) => {
+                self.handle_crossterm_events(event)?;
+            }
+            e @ (Event::NewLines(_) | Event::EOF) => self.opened_input_mut().handle_event(e)?,
+            Event::Err(error) => return Err(error),
+        };
+        Ok(())
     }
 
     fn handle_crossterm_events(&mut self, event: crossterm::event::Event) -> Result<()> {
@@ -228,7 +240,7 @@ impl Widget for &mut App {
 
         let lines = opened_input.lines(current_line, term_hight).unwrap();
         Paragraph::new(lines).white().render(area, buf);
-        log::debug!("buffer {:?}", buf);
+        log::trace!("buffer {:?}", buf);
     }
 }
 

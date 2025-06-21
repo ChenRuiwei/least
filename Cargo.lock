@@ -524,7 +524,6 @@ dependencies = [
  "directories",
  "lazy_static",
  "log",
- "mio",
  "ratatui",
  "tracing",
  "tracing-error",

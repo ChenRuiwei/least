@@ -1,10 +1,8 @@
-use core::slice::memchr;
 use std::{
     cmp,
     fmt::{self},
     fs::File,
     io::{BufRead, BufReader, stdin},
-    os::fd::{AsRawFd, RawFd},
     path::{Path, PathBuf},
     sync::mpsc::Sender,
     thread::{self, JoinHandle},
@@ -12,7 +10,6 @@ use std::{
 };
 
 use color_eyre::eyre::eyre;
-use mio::{Events, Interest, Poll, Token, unix::SourceFd};
 use ratatui::text::Line;
 
 use crate::{error::*, event::Event, utils::parse_styled_spans};
@@ -39,73 +36,32 @@ impl Input {
         Input { kind }
     }
 
-    pub fn is_stdin(&self) -> bool {
-        matches!(self.kind, InputKind::StdIn)
-    }
-
     pub fn open(self, tx: Sender<Event>) -> Result<OpenedInput> {
         let reader = thread::spawn(move || {
-            const INPUT: Token = Token(0);
             let mut reader = match self.kind {
-                InputKind::StdIn => InputReader::new(stdin().lock(), stdin().as_raw_fd(), tx),
+                InputKind::StdIn => InputReader::new(stdin().lock(), tx),
                 InputKind::OrdinaryFile(path) => {
                     let file = File::open(&path)
                         .map_err(|e| eyre!("'{}': {}", path.to_string_lossy(), e))?;
                     if file.metadata()?.is_dir() {
                         return Err(eyre!("'{}' is a directory.", path.to_string_lossy()));
                     }
-                    let raw_fd = file.as_raw_fd();
-                    InputReader::new(BufReader::new(file), raw_fd, tx)
+                    InputReader::new(BufReader::new(file), tx)
                 }
             };
 
-            let mut poll = Poll::new()?;
-            let mut events = Events::with_capacity(128);
-            poll.registry()
-                .register(&mut SourceFd(&reader.raw_fd), INPUT, Interest::READABLE)?;
-
             let mut lines_batch = Vec::new();
-            let mut line_buf = Vec::new();
+            let mut line = String::new();
             let flush_interval = Duration::from_millis(16);
             let mut last_flush = Instant::now();
             loop {
-                let timeout = flush_interval
-                    .checked_sub(last_flush.elapsed())
-                    .unwrap_or_default();
-                poll.poll(&mut events, Some(timeout))?;
-
-                for event in &events {
-                    if event.token() == INPUT {
-                        let buf = reader.inner.fill_buf()?;
-                        log::debug!("fill buf {:?}", buf);
-                        if buf.is_empty() {
-                            // EOF
-                            if !line_buf.is_empty() {
-                                lines_batch.push(String::from_utf8_lossy(&line_buf).into_owned());
-                                line_buf.clear();
-                            }
-                            if !lines_batch.is_empty() {
-                                let _ = reader.tx.send(Event::NewLines(lines_batch));
-                            }
-                            let _ = reader.tx.send(Event::EOF);
-                            return Ok(());
-                        }
-
-                        let mut consumed = 0;
-                        while let Some(i) = memchr::memchr(b'\n', &buf[consumed..]) {
-                            let end = consumed + i + 1;
-                            line_buf.extend_from_slice(&buf[consumed..end]);
-                            lines_batch.push(String::from_utf8_lossy(&line_buf).into_owned());
-                            line_buf.clear();
-                            consumed = end;
-                        }
-                        line_buf.extend_from_slice(&buf[consumed..]);
-                        consumed = buf.len();
-                        reader.inner.consume(consumed);
-                    }
+                let reached_eof = reader.read_line(&mut line).map(|size| size == 0)?;
+                if reached_eof {
+                    break;
                 }
+                lines_batch.push(line.clone());
+                line.clear();
 
-                // timeout: only flush completed lines
                 if last_flush.elapsed() >= flush_interval && !lines_batch.is_empty() {
                     let _ = reader
                         .tx
@@ -113,6 +69,13 @@ impl Input {
                     last_flush = Instant::now();
                 }
             }
+            if !lines_batch.is_empty() {
+                let _ = reader
+                    .tx
+                    .send(Event::NewLines(std::mem::take(&mut lines_batch)));
+            }
+            let _ = reader.tx.send(Event::EOF);
+            Ok(())
         });
 
         Ok(OpenedInput {
@@ -125,7 +88,7 @@ impl Input {
 }
 
 pub struct OpenedInput {
-    reader: JoinHandle<Result<()>>,
+    pub reader: JoinHandle<Result<()>>,
     lines: Vec<String>,
     reached_eof: bool,
     current_total_lines: usize,
@@ -182,21 +145,19 @@ impl OpenedInput {
 
 pub struct InputReader {
     inner: Box<dyn BufRead>,
-    raw_fd: RawFd,
     tx: Sender<Event>,
 }
 
 impl InputReader {
-    pub fn new<R: BufRead + 'static>(reader: R, raw_fd: RawFd, tx: Sender<Event>) -> InputReader {
+    pub fn new<R: BufRead + 'static>(reader: R, tx: Sender<Event>) -> InputReader {
         Self {
             inner: Box::new(reader),
-            raw_fd,
             tx,
         }
     }
 
-    pub fn read_line(&mut self, buf: &mut String) -> Result<bool> {
-        let res = self.inner.read_line(buf).map(|size| size > 0)?;
+    pub fn read_line(&mut self, buf: &mut String) -> Result<usize> {
+        let res = self.inner.read_line(buf)?;
         log::info!("read line {:?}", buf);
         *buf = buf.replace('\t', "  ");
         Ok(res)
