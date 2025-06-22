@@ -22,19 +22,17 @@ pub fn count_lines<R: Read>(reader: &mut R) -> Result<usize> {
     Ok(count)
 }
 
-pub fn parse_styled_spans(input: Vec<u8>) -> Vec<Span<'static>> {
+pub fn parse_styled_spans(input: String) -> Vec<Span<'static>> {
     enum State {
         Idle,
-        SawChar(u8),
-        SawCharBack(u8),
+        SawChar(char),
+        SawCharBack(char),
     }
 
     let mut result = Vec::new();
     let mut current_style = Style::default();
     let mut current_text = String::new();
-
     let mut state = State::Idle;
-    let mut i = 0;
 
     let push_span =
         |result: &mut Vec<Span>, current_text: &mut String, style: &mut Style, new_style: Style| {
@@ -47,17 +45,16 @@ pub fn parse_styled_spans(input: Vec<u8>) -> Vec<Span<'static>> {
             }
         };
 
-    while i < input.len() {
-        let byte = input[i];
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
         match state {
             State::Idle => {
-                state = State::SawChar(byte);
-                i += 1;
+                state = State::SawChar(c);
             }
             State::SawChar(prev) => {
-                if byte == 0x08 {
+                if c == '\x08' {
                     state = State::SawCharBack(prev);
-                    i += 1;
                 } else {
                     push_span(
                         &mut result,
@@ -65,54 +62,48 @@ pub fn parse_styled_spans(input: Vec<u8>) -> Vec<Span<'static>> {
                         &mut current_style,
                         Style::default(),
                     );
-                    current_text.push(prev as char);
-                    state = State::SawChar(byte);
-                    i += 1;
+                    current_text.push(prev);
+                    state = State::SawChar(c);
                 }
             }
             State::SawCharBack(prev) => {
-                if prev == byte {
-                    // X\bX → Bold
+                if prev == c {
                     push_span(
                         &mut result,
                         &mut current_text,
                         &mut current_style,
                         Style::new().bold(),
                     );
-                    current_text.push(byte as char);
-                } else if prev == b'_' {
-                    // _\bX → Underline
+                    current_text.push(c);
+                } else if prev == '_' {
                     push_span(
                         &mut result,
                         &mut current_text,
                         &mut current_style,
-                        Style::default().underlined(),
+                        Style::new().underlined(),
                     );
-                    current_text.push(byte as char);
+                    current_text.push(c);
                 } else {
-                    // Not a recognized pattern, emit prev and handle current as new
                     push_span(
                         &mut result,
                         &mut current_text,
                         &mut current_style,
                         Style::default(),
                     );
-                    current_text.push(prev as char);
+                    current_text.push(prev);
                     push_span(
                         &mut result,
                         &mut current_text,
                         &mut current_style,
                         Style::default(),
                     );
-                    current_text.push(byte as char);
+                    current_text.push(c);
                 }
                 state = State::Idle;
-                i += 1;
             }
         }
     }
 
-    // Flush remaining state
     if let State::SawChar(c) = state {
         push_span(
             &mut result,
@@ -120,15 +111,15 @@ pub fn parse_styled_spans(input: Vec<u8>) -> Vec<Span<'static>> {
             &mut current_style,
             Style::default(),
         );
-        current_text.push(c as char);
+        current_text.push(c);
     }
 
     if !current_text.is_empty() {
         result.push(Span::styled(current_text, current_style));
     }
+
     result
 }
-
 #[cfg(test)]
 mod test {
     use ratatui::{
@@ -140,7 +131,7 @@ mod test {
 
     #[test]
     fn test_backspace_chars() {
-        let data = b"\nN\x08NA\x08AM\x08ME\x08E _\x08X plain".to_vec();
+        let data = "\nN\x08NA\x08AM\x08ME\x08E _\x08X plain".to_string();
         let spans = parse_styled_spans(data);
         assert_eq!(spans.len(), 5);
         assert_eq!(spans[1], Span::styled("NAME", Style::new().bold()));

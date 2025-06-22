@@ -176,7 +176,14 @@ impl OpenedInput {
         let line_size = cmp::min(line_size, self.lines.len() - line_number_start);
         let mut lines = Vec::with_capacity(line_size);
         for line in self.lines[line_number_start..line_number_start + line_size].iter() {
-            let spans = parse_styled_spans(line.clone().into_bytes());
+            let spans = parse_styled_spans(line.clone());
+            for s in &spans {
+                s.content.chars().for_each(|c| {
+                    if c.is_control() {
+                        log::error!("contains control char {}", s);
+                    }
+                });
+            }
             lines.push(spans);
         }
 
