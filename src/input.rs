@@ -14,7 +14,7 @@ use ratatui::text::Line;
 
 use crate::{error::*, event::Event, utils::parse_styled_spans};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InputKind {
     OrdinaryFile(PathBuf),
     StdIn,
@@ -37,6 +37,8 @@ impl Input {
     }
 
     pub fn open(self, tx: Sender<Event>) -> Result<OpenedInput> {
+        let kind = self.kind.clone().into();
+
         let reader = thread::spawn(move || {
             let mut reader = match self.kind {
                 InputKind::StdIn => InputReader::new(stdin().lock(), tx),
@@ -94,6 +96,7 @@ impl Input {
         });
 
         Ok(OpenedInput {
+            kind,
             reader,
             lines: Vec::new(),
             reached_eof: false,
@@ -102,7 +105,23 @@ impl Input {
     }
 }
 
+#[derive(Debug)]
+pub enum OpenedInputKind {
+    OrdinaryFile(PathBuf),
+    StdIn,
+}
+
+impl From<InputKind> for OpenedInputKind {
+    fn from(value: InputKind) -> Self {
+        match value {
+            InputKind::OrdinaryFile(path) => OpenedInputKind::OrdinaryFile(path),
+            InputKind::StdIn => OpenedInputKind::StdIn,
+        }
+    }
+}
+
 pub struct OpenedInput {
+    pub kind: OpenedInputKind,
     pub reader: JoinHandle<Result<()>>,
     lines: Vec<String>,
     reached_eof: bool,
@@ -123,6 +142,13 @@ impl OpenedInput {
         self.reached_eof
     }
 
+    pub fn file_name(&self) -> Option<&str> {
+        match &self.kind {
+            OpenedInputKind::OrdinaryFile(path) => path.to_str(),
+            OpenedInputKind::StdIn => None,
+        }
+    }
+
     pub fn current_total_lines(&mut self) -> usize {
         self.current_total_lines
     }
@@ -141,7 +167,7 @@ impl OpenedInput {
         Ok(())
     }
 
-    pub fn lines(&mut self, line_number_start: usize, line_size: usize) -> Result<Vec<Line<'_>>> {
+    pub fn lines(&self, line_number_start: usize, line_size: usize) -> Result<Vec<Line<'_>>> {
         log::trace!("create lines {line_number_start} {line_size}");
 
         if line_size == 0 || self.lines.len() < line_number_start {

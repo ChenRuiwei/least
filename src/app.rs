@@ -13,8 +13,9 @@ use keys::{Action, KeyState};
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
-    layout::{Rect, Size},
-    style::Stylize,
+    layout::{Constraint, Direction, Layout, Rect, Size},
+    style::{Color, Stylize},
+    text::{Line, Span},
     widgets::{Paragraph, Widget},
 };
 
@@ -176,6 +177,18 @@ impl App {
         self.term_size.height as _
     }
 
+    fn content_half_height(&self) -> usize {
+        self.content_height() / 2
+    }
+
+    fn content_height(&self) -> usize {
+        self.term_height() - self.status_height()
+    }
+
+    fn status_height(&self) -> usize {
+        1
+    }
+
     fn quit(&mut self) {
         self.mode = AppMode::Terminated
     }
@@ -189,23 +202,23 @@ impl App {
     }
 
     fn scroll_up_half_screen(&mut self) {
-        self.current_line = self.current_line.saturating_sub(self.term_half_height())
+        self.current_line = self.current_line.saturating_sub(self.content_half_height())
     }
 
     fn scroll_down_half_screen(&mut self) {
         self.current_line = min(
-            self.current_line.saturating_add(self.term_half_height()),
+            self.current_line.saturating_add(self.content_half_height()),
             self.current_max_line(),
         )
     }
 
     fn scroll_up_screen(&mut self) {
-        self.current_line = self.current_line.saturating_sub(self.term_height())
+        self.current_line = self.current_line.saturating_sub(self.content_height())
     }
 
     fn scroll_down_screen(&mut self) {
         self.current_line = min(
-            self.current_line.saturating_add(self.term_height()),
+            self.current_line.saturating_add(self.content_height()),
             self.current_max_line(),
         )
     }
@@ -222,7 +235,7 @@ impl App {
         let mut opened_input = self.opened_input_mut();
         opened_input
             .current_total_lines()
-            .saturating_sub(self.term_height())
+            .saturating_sub(self.content_height())
     }
 
     fn go_to_top(&mut self) {
@@ -236,16 +249,44 @@ impl App {
     fn go_to_line(&mut self, line: usize) {
         self.current_line = min(line, self.current_max_line())
     }
+
+    fn status_bar(&self) -> Line<'_> {
+        let mut spans = Vec::new();
+
+        let file_name = self
+            .opened_input()
+            .file_name()
+            .map(|name| Span::from(name.to_owned()).black());
+        if let Some(file_name) = file_name {
+            spans.push(file_name);
+            spans.push(Span::from(": ").black());
+        }
+
+        let key_bindings = Span::from("Press 'ESC'/'q' to exit").black();
+        spans.push(key_bindings);
+
+        Line::from(spans).bg(Color::White)
+    }
 }
 
 impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let current_line = self.current_line;
-        let term_hight = self.term_height();
-        let mut opened_input = self.opened_input_mut();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),                            // content
+                Constraint::Length(self.status_height() as _), // status bar
+            ])
+            .split(area);
 
-        let lines = opened_input.lines(current_line, term_hight).unwrap();
-        Paragraph::new(lines).white().render(area, buf);
+        let current_line = self.current_line;
+        let content_height = self.content_height();
+        let opened_input = self.opened_input();
+        let lines = opened_input.lines(current_line, content_height).unwrap();
+        Paragraph::new(lines).white().render(chunks[0], buf);
+
+        self.status_bar().render(chunks[1], buf);
+
         log::trace!("buffer {:?}", buf);
     }
 }
